@@ -16,6 +16,16 @@ fn parse_glob(glob_str: &str) -> Result<String, &'static str> {
     }
 }
 
+fn write_file(
+    path: std::path::PathBuf,
+    content: String,
+) -> std::result::Result<(), std::io::Error> {
+    let mut f = File::create(path)?;
+    f.write_all(&content.into_bytes())?;
+    f.sync_data()?;
+    Ok(())
+}
+
 #[derive(Clap, Debug)]
 #[clap(version = "1.0")]
 struct Opts {
@@ -40,7 +50,7 @@ fn main() {
     let env_vars_to_use: HashMap<String, String> = env::vars()
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
-    let env_var_names = env_vars_to_use.keys().cloned().collect::<HashSet<String>>();
+    let env_var_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
 
     if opts.debug {
         println!("Glob Pattern: {:?}\n", glob_pattern);
@@ -54,30 +64,33 @@ fn main() {
                 if opts.debug {
                     println!("File: {:#?}", path);
                 }
-                let file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
+                let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
                 let token_match_iter = token_regex.captures_iter(&file_content);
                 let unique_tokens_from_file: HashSet<String> = token_match_iter
                     .map(|capture| String::from(capture.get(1).unwrap().as_str()))
                     .collect();
-
                 let tokens_from_file_without_env_var: HashSet<&String> =
                     unique_tokens_from_file.difference(&env_var_names).collect();
+                let tokens_present_in_env_and_file =
+                    unique_tokens_from_file.intersection(&env_var_names);
 
-                println!("tokens_from_file_without_env_var: {:?}", tokens_from_file_without_env_var);
+                println!(
+                    "tokens_from_file_without_env_var: {:?}",
+                    tokens_from_file_without_env_var
+                );
                 println!("unique_tokens_from_file {:?}", unique_tokens_from_file);
 
-                // for (name, value) in env::vars() {
-                //     let replace_name_pattern = format!("{{{{{}}}}}", name);
-                //     file = file.replace(&replace_name_pattern, &value);
-                // }
+                for name in tokens_present_in_env_and_file {
+                    let replace_name_pattern = format!("{{{{{}}}}}", name);
+                    file_content = file_content
+                        .replace(&replace_name_pattern, &env_vars_to_use.get(name).unwrap());
+                }
 
                 if opts.debug {
                     println!("File content: {:#?}", file_content);
                 }
 
-                // let mut f = File::create(path).unwrap();
-                // f.write_all(&file.into_bytes()).unwrap();
-                // f.sync_data().unwrap();
+                write_file(path, file_content);
             }
             Err(e) => {
                 println!("{:?}", e);
