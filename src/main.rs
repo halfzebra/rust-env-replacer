@@ -26,6 +26,18 @@ fn write_file(
     Ok(())
 }
 
+fn tokens_from_file(file_content: &String) -> HashSet<String> {
+    let token_regex = Regex::new(r"\{\{([a-zA-Z0-9_]+)\}\}").unwrap();
+    let token_match_iter = token_regex.captures_iter(&file_content);
+    token_match_iter
+        .map(|capture| String::from(capture.get(1).unwrap().as_str()))
+        .collect()
+}
+
+fn replace_tokens(token_map: HashMap<String, String>, file_content: String) -> String {
+    unimplemented!("Not ready yet!");
+}
+
 #[derive(Clap, Debug)]
 #[clap(version = "1.0")]
 struct Opts {
@@ -41,7 +53,6 @@ struct Opts {
 
 fn main() {
     let opts: Opts = Opts::parse();
-    let token_regex = Regex::new(r"\{\{([a-zA-Z0-9_]+)\}\}").unwrap();
     let glob_pattern = &format!(
         "{}{}",
         env::current_dir().unwrap().to_str().unwrap(),
@@ -65,10 +76,7 @@ fn main() {
                     println!("File: {:#?}", path);
                 }
                 let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
-                let token_match_iter = token_regex.captures_iter(&file_content);
-                let unique_tokens_from_file: HashSet<String> = token_match_iter
-                    .map(|capture| String::from(capture.get(1).unwrap().as_str()))
-                    .collect();
+                let unique_tokens_from_file = tokens_from_file(&file_content);
                 let tokens_from_file_without_env_var: HashSet<&String> =
                     unique_tokens_from_file.difference(&env_var_names).collect();
                 let tokens_present_in_env_and_file =
@@ -78,7 +86,6 @@ fn main() {
                     "tokens_from_file_without_env_var: {:?}",
                     tokens_from_file_without_env_var
                 );
-                println!("unique_tokens_from_file {:?}", unique_tokens_from_file);
 
                 for name in tokens_present_in_env_and_file {
                     let replace_name_pattern = format!("{{{{{}}}}}", name);
@@ -90,7 +97,7 @@ fn main() {
                     println!("File content: {:#?}", file_content);
                 }
 
-                write_file(path, file_content);
+                write_file(path, file_content).map_err(|_| "Error writing to file \n: {}");
             }
             Err(e) => {
                 println!("{:?}", e);
