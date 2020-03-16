@@ -1,0 +1,1 @@
+var hello = '{{APP_FOO}}';
