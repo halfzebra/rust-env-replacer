@@ -64,23 +64,23 @@ struct Opts {
     prefix: String,
 }
 
-fn main() {
-    let opts: Opts = Opts::parse();
+fn process_files(opts: &Opts) -> Result<(), &'static str> {
     let glob_pattern = format!(
         "{}{}",
-        env::current_dir().unwrap().to_str().unwrap(),
+        env::current_dir()
+            .map_err(|_| "Failed to retrieve the current working directory")?
+            .to_str()
+            .ok_or("Failed to convert the current working directory path to a string")?,
         &opts.glob
     );
+
     let env_vars_to_use: HashMap<String, String> = env::vars()
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
-    let env_var_token_names = env_vars_to_use.keys().cloned().collect();
-    if opts.debug {
-        println!("Glob Pattern: {:?}\n", &glob_pattern);
-        println!("{:?}\n", opts);
-    }
-
-    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
+    let env_var_token_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
+    let paths_iter = glob(&glob_pattern).map_err(|_| "Failed to read glob pattern")?;
+    
+    for entry in paths_iter {
         match entry {
             Ok(path) => {
                 if opts.debug {
@@ -89,22 +89,15 @@ fn main() {
 
                 let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
                 let tokens_from_file = tokens_from_string(&file_content);
-                let tokens_from_file_without_env_var = unknown_tokens(
-                    &tokens_from_file,
-                    &env_var_token_names,
-                );
+                let tokens_from_file_without_env_var =
+                    unknown_tokens(&tokens_from_file, &env_var_token_names);
 
-                println!(
-                    "tokens_from_file_without_env_var: {:?}",
-                    &tokens_from_file_without_env_var
-                );
-
-                if opts.debug {
-                    println!("File content: {:#?}", file_content);
+                if tokens_from_file_without_env_var.len() > 0 {
+                    process::exit(1);
                 }
 
                 replace_tokens(&env_vars_to_use, &mut file_content);
-                write_file(path, file_content).map_err(|_| "Error writing to file \n: {}");
+                write_file(path, file_content).unwrap();
             }
             Err(e) => {
                 println!("{:?}", e);
@@ -112,4 +105,11 @@ fn main() {
             }
         }
     }
+    
+    Ok(())
+}
+
+fn main() {
+    let opts: Opts = Opts::parse();
+    process_files(&opts);
 }
