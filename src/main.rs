@@ -26,7 +26,7 @@ fn write_file(
     Ok(())
 }
 
-fn tokens_from_file(file_content: &String) -> HashSet<String> {
+fn tokens_from_string(file_content: &String) -> HashSet<String> {
     let token_regex = Regex::new(r"\{\{([a-zA-Z0-9_]+)\}\}").unwrap();
     let token_match_iter = token_regex.captures_iter(&file_content);
     token_match_iter
@@ -35,13 +35,20 @@ fn tokens_from_file(file_content: &String) -> HashSet<String> {
 }
 
 fn replace_tokens(token_map: &HashMap<String, String>, file_content: &mut String) {
-    let unique_tokens_from_file = tokens_from_file(file_content);
+    let unique_tokens_from_file = tokens_from_string(file_content);
     let env_var_names: HashSet<String> = token_map.keys().cloned().collect();
     let tokens_present_in_env_and_file = unique_tokens_from_file.intersection(&env_var_names);
     for name in tokens_present_in_env_and_file {
         let replace_name_pattern = format!("{{{{{}}}}}", name);
         *file_content = file_content.replace(&replace_name_pattern, token_map.get(name).unwrap());
     }
+}
+
+fn unknown_tokens<'a>(
+    tokens_from_file: &'a HashSet<String>,
+    env_var_names: &'a HashSet<String>,
+) -> HashSet<&'a String> {
+    tokens_from_file.difference(&env_var_names).collect()
 }
 
 #[derive(Clap, Debug)]
@@ -59,7 +66,7 @@ struct Opts {
 
 fn main() {
     let opts: Opts = Opts::parse();
-    let glob_pattern = &format!(
+    let glob_pattern = format!(
         "{}{}",
         env::current_dir().unwrap().to_str().unwrap(),
         &opts.glob
@@ -67,27 +74,29 @@ fn main() {
     let env_vars_to_use: HashMap<String, String> = env::vars()
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
-
+    let env_var_token_names = env_vars_to_use.keys().cloned().collect();
     if opts.debug {
-        println!("Glob Pattern: {:?}\n", glob_pattern);
+        println!("Glob Pattern: {:?}\n", &glob_pattern);
         println!("{:?}\n", opts);
     }
 
-    for entry in glob(glob_pattern).expect("Failed to read glob pattern") {
+    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
                 if opts.debug {
                     println!("File: {:#?}", path);
                 }
+
                 let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
-                let unique_tokens_from_file = tokens_from_file(&file_content);
-                let env_var_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
-                let tokens_from_file_without_env_var: HashSet<&String> =
-                    unique_tokens_from_file.difference(&env_var_names).collect();
+                let tokens_from_file = tokens_from_string(&file_content);
+                let tokens_from_file_without_env_var = unknown_tokens(
+                    &tokens_from_file,
+                    &env_var_token_names,
+                );
 
                 println!(
                     "tokens_from_file_without_env_var: {:?}",
-                    tokens_from_file_without_env_var
+                    &tokens_from_file_without_env_var
                 );
 
                 if opts.debug {
@@ -95,7 +104,6 @@ fn main() {
                 }
 
                 replace_tokens(&env_vars_to_use, &mut file_content);
-
                 write_file(path, file_content).map_err(|_| "Error writing to file \n: {}");
             }
             Err(e) => {
