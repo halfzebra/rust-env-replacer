@@ -34,8 +34,14 @@ fn tokens_from_file(file_content: &String) -> HashSet<String> {
         .collect()
 }
 
-fn replace_tokens(token_map: HashMap<String, String>, file_content: String) -> String {
-    unimplemented!("Not ready yet!");
+fn replace_tokens(token_map: &HashMap<String, String>, file_content: &mut String) {
+    let unique_tokens_from_file = tokens_from_file(file_content);
+    let env_var_names: HashSet<String> = token_map.keys().cloned().collect();
+    let tokens_present_in_env_and_file = unique_tokens_from_file.intersection(&env_var_names);
+    for name in tokens_present_in_env_and_file {
+        let replace_name_pattern = format!("{{{{{}}}}}", name);
+        *file_content = file_content.replace(&replace_name_pattern, token_map.get(name).unwrap());
+    }
 }
 
 #[derive(Clap, Debug)]
@@ -61,11 +67,9 @@ fn main() {
     let env_vars_to_use: HashMap<String, String> = env::vars()
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
-    let env_var_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
 
     if opts.debug {
         println!("Glob Pattern: {:?}\n", glob_pattern);
-        println!("env_var_names: {:?}\n", env_var_names);
         println!("{:?}\n", opts);
     }
 
@@ -77,25 +81,20 @@ fn main() {
                 }
                 let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
                 let unique_tokens_from_file = tokens_from_file(&file_content);
+                let env_var_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
                 let tokens_from_file_without_env_var: HashSet<&String> =
                     unique_tokens_from_file.difference(&env_var_names).collect();
-                let tokens_present_in_env_and_file =
-                    unique_tokens_from_file.intersection(&env_var_names);
 
                 println!(
                     "tokens_from_file_without_env_var: {:?}",
                     tokens_from_file_without_env_var
                 );
 
-                for name in tokens_present_in_env_and_file {
-                    let replace_name_pattern = format!("{{{{{}}}}}", name);
-                    file_content = file_content
-                        .replace(&replace_name_pattern, &env_vars_to_use.get(name).unwrap());
-                }
-
                 if opts.debug {
                     println!("File content: {:#?}", file_content);
                 }
+
+                replace_tokens(&env_vars_to_use, &mut file_content);
 
                 write_file(path, file_content).map_err(|_| "Error writing to file \n: {}");
             }
