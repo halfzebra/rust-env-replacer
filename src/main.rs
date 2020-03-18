@@ -64,13 +64,20 @@ struct Opts {
     prefix: String,
 }
 
-fn process_files(opts: &Opts) -> Result<(), &'static str> {
-    let glob_pattern = format!(
+#[derive(Debug)]
+struct EnvReplacerError(String);
+
+fn process_files(opts: &Opts) -> Result<(), EnvReplacerError> {
+    let glob_pattern: String = format!(
         "{}{}",
         env::current_dir()
-            .map_err(|_| "Failed to retrieve the current working directory")?
+            .map_err(|_| EnvReplacerError(
+                "Failed to retrieve the current working directory".into()
+            ))?
             .to_str()
-            .ok_or("Failed to convert the current working directory path to a string")?,
+            .ok_or(EnvReplacerError(
+                "Failed to convert the current working directory path to a string".into()
+            ))?,
         &opts.glob
     );
 
@@ -78,8 +85,16 @@ fn process_files(opts: &Opts) -> Result<(), &'static str> {
         .filter(|(name, _)| name.starts_with(&opts.prefix))
         .collect();
     let env_var_token_names: HashSet<String> = env_vars_to_use.keys().cloned().collect();
-    let paths_iter = glob(&glob_pattern).map_err(|_| "Failed to read glob pattern")?;
-    
+    let paths_iter =
+        glob(&glob_pattern).map_err(|_| EnvReplacerError("Failed to read glob pattern".into()))?;
+
+    if env_vars_to_use.len() == 0 {
+        return Err(EnvReplacerError(format!(
+            "Could not find any env vars starting with \"{}\"",
+            &opts.prefix
+        )));
+    }
+
     for entry in paths_iter {
         match entry {
             Ok(path) => {
@@ -105,11 +120,23 @@ fn process_files(opts: &Opts) -> Result<(), &'static str> {
             }
         }
     }
-    
+
     Ok(())
 }
 
+fn handle_processing_result(res: Result<(), EnvReplacerError>) {
+    match res {
+        Ok(_) => {
+            println!("Substitution successful");
+            process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("Substitution failed with error:\n  {}", e.0);
+            process::exit(65);
+        }
+    }
+}
+
 fn main() {
-    let opts: Opts = Opts::parse();
-    process_files(&opts);
+    handle_processing_result(process_files(&Opts::parse()));
 }
