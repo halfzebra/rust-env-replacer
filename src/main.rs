@@ -9,6 +9,27 @@ use std::fs::File;
 use std::io::Write;
 use std::process;
 
+#[derive(Clap, Debug)]
+#[clap(version = "1.0")]
+struct Opts {
+    #[clap(short, long)]
+    debug: bool,
+    /// File glob to process
+    #[clap(name = "GLOB", parse(try_from_str = parse_glob))]
+    glob: String,
+
+    /// Env var name prefix to use
+    #[clap(short, long, default_value("APP_"))]
+    prefix: String,
+
+    /// Continue substitution if some of the tokens in files don't have a corresponding env var
+    #[clap(long)]
+    ignore_missing: bool,
+}
+
+#[derive(Debug)]
+struct EnvReplacerError(String);
+
 fn parse_glob(glob_str: &str) -> Result<String, &'static str> {
     match glob::Pattern::new(&glob_str) {
         Ok(_) => Ok(String::from(glob_str)),
@@ -51,22 +72,6 @@ fn unknown_tokens<'a>(
     tokens_from_file.difference(&env_var_names).collect()
 }
 
-#[derive(Clap, Debug)]
-#[clap(version = "1.0")]
-struct Opts {
-    #[clap(short, long)]
-    debug: bool,
-    /// File glob to process
-    #[clap(name = "GLOB", parse(try_from_str = parse_glob))]
-    glob: String,
-
-    #[clap(short, long, default_value("APP_"))]
-    prefix: String,
-}
-
-#[derive(Debug)]
-struct EnvReplacerError(String);
-
 fn process_files(opts: &Opts) -> Result<(), EnvReplacerError> {
     let glob_pattern: String = format!(
         "{}{}",
@@ -96,29 +101,35 @@ fn process_files(opts: &Opts) -> Result<(), EnvReplacerError> {
     }
 
     for entry in paths_iter {
+        println!("{:?}", entry);
         match entry {
             Ok(path) => {
-                if opts.debug {
-                    println!("File: {:#?}", path);
-                }
-
-                let mut file_content = fs::read_to_string(path.clone().into_os_string()).unwrap();
+                let file_path_str = path.clone().into_os_string().into_string();
+                let mut file_content = fs::read_to_string(&path).unwrap();
                 let tokens_from_file = tokens_from_string(&file_content);
                 let tokens_from_file_without_env_var =
                     unknown_tokens(&tokens_from_file, &env_var_token_names);
 
                 if tokens_from_file_without_env_var.len() > 0 {
-                    process::exit(1);
+                    return Err(EnvReplacerError(format!("{}", &file_path_str.unwrap())));
                 }
 
                 replace_tokens(&env_vars_to_use, &mut file_content);
-                write_file(path, file_content).unwrap();
+                write_file(path, file_content).map_err(|_| {
+                    EnvReplacerError(format!(
+                        "Failed to update file: {}",
+                        &file_path_str.unwrap()
+                    ))
+                })?;
             }
             Err(e) => {
-                println!("{:?}", e);
-                process::exit(1);
+                if opts.ignore_missing == false {
+                    return Err(EnvReplacerError(
+                        "Failed to unwrap one of the glob entries".into(),
+                    ));
+                }
             }
-        }
+        };
     }
 
     Ok(())
