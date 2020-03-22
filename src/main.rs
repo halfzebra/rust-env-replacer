@@ -122,7 +122,7 @@ fn process_files(opts: &Opts) -> Result<(), EnvReplacerError> {
                     ))
                 })?;
             }
-            Err(e) => {
+            Err(_e) => {
                 if opts.ignore_missing == false {
                     return Err(EnvReplacerError(
                         "Failed to unwrap one of the glob entries".into(),
