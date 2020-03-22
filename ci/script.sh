@@ -11,11 +11,11 @@ main() {
         return
     fi
 
-    cross test --target $TARGET
-    cross test --target $TARGET --release
+    # cross test --target $TARGET
+    # cross test --target $TARGET --release
 
-    cross run --target $TARGET
-    cross run --target $TARGET --release
+    APP_TEST=hello cross test --target $TARGET -- /tests/fixtures/**/*.js
+    APP_TEST=hello cross test --target $TARGET --release -- /tests/fixtures/**/*.js
 }
 
 # we don't run the "test phase" when doing deploys
