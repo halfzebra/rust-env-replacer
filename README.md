@@ -1,5 +1,7 @@
 # 🦀💉 rust-env-replacer
 
+[![Build Status](https://travis-ci.org/halfzebra/rust-env-replacer.svg?branch=master)](https://travis-ci.org/halfzebra/rust-env-replacer)
+
 A tool for replacing tokens in files using env vars.
 
 ## Used libs
